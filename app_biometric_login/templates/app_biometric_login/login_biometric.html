@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login biométrico</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 420px;
+            background: rgba(255,255,255,0.08);
+            padding: 30px;
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 25px rgba(0,0,0,.4);
+            text-align: center;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+            color: #38bdf8;
+            font-size: 26px;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 12px;
+            border: 3px solid #38bdf8;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #38bdf8;
+            color: #0f172a;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            background: #7dd3fc;
+        }
+
+        .msg {
+            margin-top: 15px;
+            min-height: 22px;
+            font-size: 14px;
+        }
+
+        a {
+            display: block;
+            margin-top: 20px;
+            text-decoration: none;
+            color: #38bdf8;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .loading {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h2>Login Biométrico</h2>
+    <p>Rostro + Voz</p>
+
+    <video id="video" autoplay playsinline></video>
+
+    <button id="btnLogin" class="btn">Iniciar verificación</button>
+
+    <p id="msg" class="msg"></p>
+
+    <a href="{% url 'login' %}">⬅ Volver al inicio</a>
+</div>
+
+
+<script>
+const video = document.getElementById("video");
+const btnLogin = document.getElementById("btnLogin");
+const msg = document.getElementById("msg");
+
+// ==========================
+// ACTIVAR CÁMARA
+// ==========================
+navigator.mediaDevices.getUserMedia({ video: true })
+.then(stream => {
+    video.srcObject = stream;
+})
+.catch(err => {
+    msg.innerText = "No se pudo acceder a la cámara ❌";
+    msg.style.color = "red";
+});
+
+
+// =======================================
+//       PROCESO PRINCIPAL DE LOGIN
+// =======================================
+
+btnLogin.onclick = async () => {
+
+    btnLogin.disabled = true;
+    msg.innerText = "Capturando rostro...";
+    msg.style.color = "#facc15";
+    msg.classList.add("loading");
+
+    // Esperar a que el video cargue frame real
+    if (!video.videoWidth) {
+        await new Promise(r => setTimeout(r, 400));
+    }
+
+    // ==========================
+    // CAPTURAR FOTO
+    // ==========================
+    let canvas = document.createElement("canvas");
+    canvas.width = 160;
+    canvas.height = 160;
+
+    let ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, 160, 160);
+
+    let face_image = canvas.toDataURL("image/jpeg");
+
+    // ==========================
+    // GRABAR VOZ (3s)
+    // ==========================
+    msg.innerText = "Grabando voz (3 segundos)...";
+
+    const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let chunks = [];
+    let recorder = new MediaRecorder(audioStream);
+
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.start();
+
+    await new Promise(r => setTimeout(r, 3000));
+    recorder.stop();
+
+    recorder.onstop = () => {
+        msg.innerText = "Procesando datos...";
+
+        let audioBlob = new Blob(chunks, { type: "audio/wav" });
+
+        // ==========================
+        // ENVIAR AL SERVIDOR
+        // ==========================
+        let formData = new FormData();
+        formData.append("face_image", face_image);
+        formData.append("voice_audio", audioBlob);
+
+        fetch("{% url 'verify_biometric' %}", {
+            method: "POST",
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            msg.classList.remove("loading");
+
+            if (data.status === "success") {
+                msg.innerText = "Autenticación exitosa 🎉 Bienvenido";
+                msg.style.color = "#7dd3fc";
+
+                setTimeout(() => {
+                    window.location.href = "{% url 'welcome' %}";
+                }, 1200);
+
+            } else {
+                msg.innerText = "No coincide ❌ (score: " + data.score.toFixed(3) + ")";
+                msg.style.color = "red";
+            }
+
+            btnLogin.disabled = false;
+        })
+        .catch(err => {
+            console.error(err);
+            msg.classList.remove("loading");
+            msg.innerText = "Error en el servidor ❌";
+            msg.style.color = "red";
+            btnLogin.disabled = false;
+        });
+    };
+};
+</script>
+
+</body>
+</html>

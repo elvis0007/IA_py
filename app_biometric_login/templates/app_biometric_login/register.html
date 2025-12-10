@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro biométrico</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 420px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 8px 25px rgba(0,0,0,.4);
+            backdrop-filter: blur(10px);
+        }
+
+        h2 {
+            text-align: center;
+            color: #38bdf8;
+            margin-bottom: 20px;
+        }
+
+        .input {
+            width: 100%;
+            padding: 12px;
+            margin-top: 12px;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255,255,255,0.15);
+            color: white;
+        }
+
+        .btn {
+            width: 100%;
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            background: #38bdf8;
+            border: none;
+            color: #0f172a;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-secondary {
+            background: #6366f1;
+            margin-top: 10px;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 12px;
+            border: 2px solid #38bdf8;
+            margin-top: 10px;
+        }
+
+        #msg {
+            margin-top: 10px;
+            min-height: 20px;
+            text-align: center;
+        }
+
+        #photoCount {
+            text-align:center;
+            margin-top:8px;
+            font-size:14px;
+            color:#7dd3fc;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h2>Registro Biométrico</h2>
+
+    <form id="regForm">
+
+        <input class="input" name="name" placeholder="Nombre completo" required>
+        <input class="input" name="email" type="email" placeholder="Correo" required>
+        <input class="input" name="password" type="password" placeholder="Contraseña" required>
+
+        <!-- CAPTURA DE FOTOS -->
+        <h3 style="color:#7dd3fc;">Capturar 5 fotos</h3>
+
+        <video id="video" autoplay playsinline></video>
+
+        <button type="button" id="btnPhoto" class="btn-secondary">Tomar foto</button>
+
+        <p id="photoCount">0 / 5 fotos</p>
+
+        <!-- Lista de fotos como JSON -->
+        <input type="hidden" name="photos" id="photos_input">
+
+        <!-- CAPTURA DE VOZ -->
+        <h3 style="color:#7dd3fc;">Grabar voz (3 segundos)</h3>
+
+        <button type="button" id="btnRecord" class="btn-secondary">Grabar voz</button>
+
+        <p id="msg"></p>
+
+        <button type="submit" class="btn">Registrar</button>
+    </form>
+
+    <a href="{% url 'login' %}" style="color:#38bdf8; text-align:center;">⬅ Volver al inicio</a>
+
+</div>
+
+
+<script>
+const video = document.getElementById("video");
+const btnPhoto = document.getElementById("btnPhoto");
+const btnRecord = document.getElementById("btnRecord");
+const form = document.getElementById("regForm");
+const msg = document.getElementById("msg");
+const photoCount = document.getElementById("photoCount");
+
+let photosList = [];   // ✅ nombre correcto
+let audioBlob = null;
+
+// ================================
+// INICIAR CÁMARA
+// ================================
+navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => video.srcObject = stream);
+
+// ================================
+// CAPTURAR FOTO
+// ================================
+btnPhoto.onclick = () => {
+    if (!video.videoWidth) {
+        msg.innerText = "Cámara no lista";
+        msg.style.color = "yellow";
+        return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 160;
+    canvas.height = 160;
+    canvas.getContext("2d").drawImage(video, 0, 0, 160, 160);
+
+    const base64 = canvas.toDataURL("image/jpeg");
+
+    photosList.push(base64);   // ✅ ahora sí funciona
+
+    photoCount.innerText = `${photosList.length} / 5 fotos`;
+
+    if (photosList.length === 5) {
+        msg.innerText = "Fotos completas ✔";
+        msg.style.color = "#7dd3fc";
+    }
+};
+
+// ================================
+// GRABAR AUDIO
+// ================================
+btnRecord.onclick = async () => {
+    msg.innerText = "Grabando voz (3 segundos)...";
+    msg.style.color = "#facc15";
+
+    const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let chunks = [];
+    let recorder = new MediaRecorder(audioStream);
+
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.start();
+
+    setTimeout(() => recorder.stop(), 3000);
+
+    recorder.onstop = () => {
+        audioBlob = new Blob(chunks, { type: "audio/webm" }); // chrome usa webm
+        msg.innerText = "Voz grabada ✔";
+        msg.style.color = "#7dd3fc";
+    };
+};
+
+// ================================
+// ENVIAR FORMULARIO
+// ================================
+form.onsubmit = (e) => {
+    e.preventDefault();
+
+    if (photosList.length < 5) {
+        msg.innerText = "Debes capturar 5 fotos";
+        msg.style.color = "red";
+        return;
+    }
+
+    if (!audioBlob) {
+        msg.innerText = "Debes grabar la voz";
+        msg.style.color = "red";
+        return;
+    }
+
+    const formData = new FormData(form);
+    formData.append("face_images", JSON.stringify(photosList));
+    formData.append("voice_audio", audioBlob);
+
+    fetch("{% url 'register_biometric' %}", {
+        method: "POST",
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === "success") {
+            msg.innerText = "Registro exitoso 🎉";
+            msg.style.color = "#7dd3fc";
+            setTimeout(() => window.location.href = "{% url 'login' %}", 1500);
+        } else {
+            msg.innerText = "Error: " + data.message;
+            msg.style.color = "red";
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        msg.innerText = "Error en el servidor";
+        msg.style.color = "red";
+    });
+};
+</script>
+
+</body>
+</html>

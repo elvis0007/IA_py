@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Capturar Voz{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Grabación de Voz</h1>
+
+    <button id="start">🎤 Iniciar Grabación</button>
+    <button id="stop" disabled>⏹ Detener</button>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+
+        document.getElementById("start").onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+                const formData = new FormData();
+                formData.append("audio", audioBlob);
+
+                fetch("/dataset/capture/voice/", {
+                    method: "POST",
+                    headers: { "X-CSRFToken": "{{ csrf_token }}" },
+                    body: formData
+                });
+            };
+
+            mediaRecorder.start();
+            document.getElementById("stop").disabled = false;
+        };
+
+        document.getElementById("stop").onclick = () => {
+            mediaRecorder.stop();
+        };
+    </script>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Dataset Creator{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Creación de Dataset</h1>
+
+    <a href="/dataset/capture/face/">
+        <button>Capturar Rostro</button>
+    </a>
+
+    <a href="/dataset/capture/voice/">
+        <button>Capturar Voz</button>
+    </a>
+
+    <hr>
+
+    <form action="/dataset/train/faces/" method="POST">
+        {% csrf_token %}
+        <button type="submit">Entrenar modelo facial</button>
+    </form>
+
+    <form action="/dataset/train/voice/" method="POST">
+        {% csrf_token %}
+        <button type="submit">Entrenar modelo de voz</button>
+    </form>
+</div>
+{% endblock %}

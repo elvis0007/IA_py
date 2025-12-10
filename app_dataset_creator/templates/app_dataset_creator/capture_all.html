@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Captura Biométrica</title>
+
+<style>
+body {
+    background:#0b0f1a;
+    color:white;
+    text-align:center;
+    font-family:Arial;
+}
+video, canvas {
+    width:300px;
+    border:3px solid #00eaff;
+    border-radius:10px;
+}
+button {
+    background:#00eaff;
+    padding:10px 20px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:bold;
+    margin-top:15px;
+}
+#instructions {
+    font-size:18px;
+    margin-top:10px;
+    color:#00eaff;
+    font-weight:bold;
+}
+</style>
+</head>
+<body>
+
+<h1>📸 Captura de Rostro + Voz</h1>
+
+<input id="username" placeholder="Usuario" 
+       style="padding:8px;border-radius:5px">
+
+<div id="instructions">Mira al frente, iluminación adecuada</div>
+
+<br><br>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas" width="300" height="300" style="display:none;"></canvas>
+
+<h2 id="progress">0 / 100</h2>
+
+<button onclick="start()">Iniciar Captura Facial</button>
+
+<script>
+let video = document.getElementById("video");
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+
+let count = 0;
+let MAX = 100;
+let username = "";
+
+async function start() {
+
+    username = document.getElementById("username").value.trim();
+    if (!username) return alert("Ingresa usuario");
+
+    let stream = await navigator.mediaDevices.getUserMedia({ video:true });
+    video.srcObject = stream;
+
+    showInstructions();
+    captureLoop();
+}
+
+function showInstructions() {
+    const msgs = [
+        "Mira al frente",
+        "Gira a la derecha",
+        "Gira a la izquierda",
+        "Sonríe",
+        "Rostro neutral"
+    ];
+
+    let i = 0;
+    setInterval(() => {
+        document.getElementById("instructions").innerText = msgs[i % msgs.length];
+        i++;
+    }, 2000);
+}
+
+function captureLoop() {
+
+    if (count >= MAX) {
+        alert("Captura facial finalizada");
+        return;
+    }
+
+    if (video.videoWidth === 0) {
+        requestAnimationFrame(captureLoop);
+        return;
+    }
+
+    ctx.drawImage(video, 0, 0, 300, 300);
+
+    // Convertir frame a Base64
+    let dataURL = canvas.toDataURL("image/jpeg");
+
+    let form = new FormData();
+    form.append("username", username);
+    form.append("image", dataURL); // 👈 Enviar Base64 correcto
+
+    fetch("/dataset/capture/face/", {
+        method:"POST",
+        body: form
+    })
+    .then(res => res.json())
+    .then(res => {
+        console.log("RESPUESTA:", res);
+
+        if (res.status === "ok") {
+            count = res.count;
+            document.getElementById("progress").innerText = `${count} / ${MAX}`;
+        }
+    });
+
+    setTimeout(() => requestAnimationFrame(captureLoop), 300);
+}
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,28 @@
+<h1>Capturar Rostro</h1>
+
+<input type="text" id="username" placeholder="Nombre de usuario">
+
+<video id="video" autoplay></video>
+<button id="captureBtn">Capturar</button>
+
+<script>
+navigator.mediaDevices.getUserMedia({ video: true })
+.then(stream => video.srcObject = stream);
+
+document.getElementById("captureBtn").onclick = () => {
+    let canvas = document.createElement("canvas");
+    canvas.width = 300;
+    canvas.height = 300;
+    canvas.getContext("2d").drawImage(video, 0, 0, 300, 300);
+
+    fetch("", {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: "username=" + document.getElementById("username").value +
+              "&image=" + canvas.toDataURL()
+    });
+};
+</script>

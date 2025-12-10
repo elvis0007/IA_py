@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ingresar con correo</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 40px;
+            border-radius: 16px;
+            width: 360px;
+            text-align: center;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(10px);
+        }
+
+        h2 {
+            margin-bottom: 20px;
+            color: #38bdf8;
+            font-size: 26px;
+        }
+
+        .input {
+            width: 100%;
+            padding: 12px;
+            margin: 12px 0;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        .input:focus {
+            outline: 2px solid #38bdf8;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #38bdf8;
+            border: none;
+            border-radius: 8px;
+            color: #0f172a;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: 0.3s;
+        }
+
+        .btn:hover {
+            background: #7dd3fc;
+        }
+
+        .error {
+            color: #ff6b6b;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        a {
+            display: block;
+            margin-top: 20px;
+            color: #38bdf8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+
+        <h2>Ingresar con correo</h2>
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <input class="input" type="email" name="email" placeholder="Correo electrónico" required />
+            <input class="input" type="password" name="password" placeholder="Contraseña" required />
+            <button class="btn" type="submit">Ingresar</button>
+        </form>
+
+        <a href="{% url 'login' %}">⬅ Volver al inicio</a>
+    </div>
+
+</body>
+</html>

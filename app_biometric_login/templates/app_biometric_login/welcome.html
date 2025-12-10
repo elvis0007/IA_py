@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenido</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            font-family: Arial, sans-serif;
+            color: white;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .card {
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            width: 420px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 8px 25px rgba(0,0,0,.4);
+            animation: fadeIn 0.8s ease-in-out;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 15px;
+            color: #38bdf8;
+        }
+
+        .avatar {
+            width: 110px;
+            height: 110px;
+            border-radius: 50%;
+            background: #38bdf8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #0f172a;
+            font-size: 50px;
+            font-weight: bold;
+            margin: 0 auto 20px auto;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            margin-top: 20px;
+            background: #38bdf8;
+            color: #0f172a;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            background: #7dd3fc;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        a {
+            display: block;
+            margin-top: 15px;
+            color: #38bdf8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<div class="card">
+    
+    <!-- Avatar con inicial -->
+    <div class="avatar">
+        {{ request.user.first_name|default:"U"|first|upper }}
+    </div>
+
+    <h1>Bienvenido, {{ request.user.first_name }} 👋</h1>
+    <p>Autenticación realizada con éxito.</p>
+
+    <button class="btn" onclick="window.location.href='/'">Ir al inicio</button>
+
+    <a href="/admin/logout/">Cerrar sesión</a>
+</div>
+
+</body>
+</html>
