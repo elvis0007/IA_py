@@ -130,50 +130,59 @@ def get_face_embedding_from_base64(data_url: str) -> np.ndarray:
 # -------------------------------------------------------------
 def get_voice_embedding_from_file(django_file):
     """
-    Lee audio desde FormData (generalmente WebM/OGG) 
-    y lo convierte en un embedding.
-    Detecta silencio y devuelve None si no hay voz.
+    Lee audio desde FormData (WebM/OGG/WAV),
+    lo convierte correctamente a float32
+    y retorna el embedding de voz.
     """
     try:
         from pydub import AudioSegment
         import numpy as np
         import torch
+        import io
 
-        # Leer audio
+        # Leer bytes del archivo
         audio_bytes = django_file.read()
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
 
-        # Convertir a 16kHz mono
+        # Convertir a mono 16kHz
         audio = audio.set_frame_rate(16000).set_channels(1)
 
-        # Convertir a array numpy float32
-        samples = np.array(audio.get_array_of_samples()).astype("float32")
+        # Convertir a array numpy (float32 SIEMPRE)
+        samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-        # Normalización
+        # Normalizar
         max_val = np.max(np.abs(samples)) + 1e-8
         samples = samples / max_val
 
-        # 🔥 DETECCIÓN DE SILENCIO (UMBRAL REAL)
-        rms = np.sqrt(np.mean(samples**2))
-
-        if rms < 0.01:  
-            print("[AUDIO ERROR] detectado silencio / volumen muy bajo")
+        # 🚨 Detección de silencio
+        rms = float(np.sqrt(np.mean(samples ** 2)))
+        if rms < 0.01:
+            print("[AUDIO ERROR] detectado silencio / volumen bajo")
             return None
 
-        # Asegurar duración fija de 3 segundos
+        # Duración fija 3s (48000 samples)
         target_len = 16000 * 3
         if len(samples) < target_len:
-            pad = np.zeros(target_len - len(samples))
-            samples = np.concatenate([samples, pad])
+            pad = np.zeros(target_len - len(samples), dtype=np.float32)
+            samples = np.concatenate([samples, pad]).astype(np.float32)
         else:
-            samples = samples[:target_len]
+            samples = samples[:target_len].astype(np.float32)
 
-        # Convertir a tensor
-        audio_tensor = torch.tensor(samples).unsqueeze(0).unsqueeze(0).to(DEVICE)
+        # Crear tensor en float32
+        audio_tensor = torch.tensor(samples, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
 
-        # Obtener embedding REAL del modelo
+        # Asegurar que el modelo también esté en float32
+        VOICE_MODEL.to(torch.float32)
+
+        # Enviar tensor al device
+        audio_tensor = audio_tensor.to(DEVICE)
+
+        # Obtener embedding
         with torch.no_grad():
-            emb = VOICE_MODEL.embedding(audio_tensor).cpu().numpy().flatten()
+            emb = VOICE_MODEL.embedding(audio_tensor)
+
+        # Convertir a numpy float32
+        emb = emb.cpu().numpy().flatten().astype(np.float32)
 
         return emb
 
