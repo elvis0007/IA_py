@@ -1,11 +1,12 @@
 import base64
 import io
-import numpy as np
-import cv2
-import torch
-import librosa
-import soundfile as sf
 from pathlib import Path
+
+import cv2
+import librosa
+import numpy as np
+import torch
+from pydub import AudioSegment
 
 # Importar tus modelos reales
 from biometrics_ml.faces.siamese_faces_model import SiameseNet, EmbeddingNet
@@ -19,7 +20,7 @@ FACE_MODEL_PATH = Path("models/siamese_faces.pth")
 
 
 # -------------------------------------------------------------
-# CARGAR MODELO DE VOZ
+# CARGA DE MODELOS
 # -------------------------------------------------------------
 def load_voice_model():
     model = SiameseVoiceNet(VoiceEmbeddingNet()).to(DEVICE)
@@ -28,9 +29,6 @@ def load_voice_model():
     return model
 
 
-# -------------------------------------------------------------
-# CARGAR MODELO DE ROSTRO
-# -------------------------------------------------------------
 def load_face_model():
     model = SiameseNet(EmbeddingNet()).to(DEVICE)
     model.load_state_dict(torch.load(FACE_MODEL_PATH, map_location=DEVICE))
@@ -42,74 +40,146 @@ VOICE_MODEL = load_voice_model()
 FACE_MODEL = load_face_model()
 
 
+# Dimensiones por defecto de los embeddings (se asume 128, que es lo típico
+# en redes siamesas; si tu modelo usa otra dimensión, puedes ajustarlo aquí)
+DEFAULT_FACE_EMB_DIM = 128
+DEFAULT_VOICE_EMB_DIM = 128
+
+
+# -------------------------------------------------------------
+# UTILIDAD: obtener vector de ceros para casos inválidos
+# -------------------------------------------------------------
+def zero_face_embedding():
+    return np.zeros(DEFAULT_FACE_EMB_DIM, dtype="float32")
+
+
+def zero_voice_embedding():
+    return np.zeros(DEFAULT_VOICE_EMB_DIM, dtype="float32")
+
+
 # -------------------------------------------------------------
 # OBTENER EMBEDDING DE ROSTRO DESDE BASE64
 # -------------------------------------------------------------
 def get_face_embedding_from_base64(data_url: str) -> np.ndarray:
-    if "," in data_url:
-        _, b64data = data_url.split(",", 1)
-    else:
-        b64data = data_url
+    """
+    Decodifica una imagen en base64, detecta el rostro con Haar Cascade,
+    recorta, normaliza y obtiene el embedding usando el modelo siamés de rostro.
 
-    # Decodificar imagen
-    image_bytes = base64.b64decode(b64data)
-    img_array = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    Si NO se detecta rostro, devuelve un vector de ceros para que la distancia
+    sea alta y no pase la autenticación.
+    """
+    try:
+        # Separar cabecera data:image/...;base64,xxxx
+        if "," in data_url:
+            _, b64data = data_url.split(",", 1)
+        else:
+            b64data = data_url
 
-    # Preprocesamiento EXACTO COMO ENTRENASTE
-    img = cv2.resize(img, (160, 160))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = img.astype("float32") / 255.0
-    img = np.expand_dims(img, axis=(0, 1))  # (1,1,160,160)
-    img_tensor = torch.tensor(img).to(DEVICE)
+        # Decodificar imagen
+        image_bytes = base64.b64decode(b64data)
+        img_array = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
-    # Obtener embedding real
-    with torch.no_grad():
-        emb = FACE_MODEL.embedding(img_tensor).cpu().numpy().flatten()
+        if img is None:
+            # Imagen no válida
+            return zero_face_embedding()
 
-    return emb
+        # Detectar rostro con Haar Cascade
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+        )
+
+        if len(faces) == 0:
+            # No se detectó rostro → devolución segura
+            return zero_face_embedding()
+
+        # Usar la primera cara detectada
+        x, y, w, h = faces[0]
+        face = gray[y : y + h, x : x + w]
+
+        # Redimensionar a tamaño usado en entrenamiento
+        face = cv2.resize(face, (160, 160))
+        face = face.astype("float32") / 255.0
+
+        # (1,1,160,160)
+        face = np.expand_dims(face, axis=(0, 1))
+        face_tensor = torch.tensor(face, dtype=torch.float32).to(DEVICE)
+
+        # Obtener embedding
+        with torch.no_grad():
+            emb = FACE_MODEL.embedding(face_tensor).cpu().numpy().flatten()
+
+        # En caso de que el modelo tenga otra dimensión, actualizamos el default
+        global DEFAULT_FACE_EMB_DIM
+        DEFAULT_FACE_EMB_DIM = emb.shape[0]
+
+        return emb.astype("float32")
+
+    except Exception as e:
+        # Para no romper el flujo en producción, devolvemos embedding nulo
+        print(f"[get_face_embedding_from_base64] Error: {e}")
+        return zero_face_embedding()
 
 
 # -------------------------------------------------------------
 # OBTENER EMBEDDING DE VOZ DESDE ARCHIVO
 # -------------------------------------------------------------
-
 def get_voice_embedding_from_file(django_file):
     """
     Lee audio desde FormData (generalmente WebM/OGG) 
-    y lo convierte en un vector.
+    y lo convierte en un embedding.
+    Detecta silencio y devuelve None si no hay voz.
     """
-    from pydub import AudioSegment
-    import numpy as np
-    import torch
+    try:
+        from pydub import AudioSegment
+        import numpy as np
+        import torch
 
-    # Convertir blob a AudioSegment
-    audio_bytes = django_file.read()
-    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        # Leer audio
+        audio_bytes = django_file.read()
+        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
 
-    # Convertir a 16kHz mono WAV interno
-    audio = audio.set_frame_rate(16000).set_channels(1)
+        # Convertir a 16kHz mono
+        audio = audio.set_frame_rate(16000).set_channels(1)
 
-    # Asegurar duración exacta de 3s
-    target_ms = 3000
-    if len(audio) < target_ms:
-        silence = AudioSegment.silent(duration=target_ms - len(audio))
-        audio = audio + silence
-    else:
-        audio = audio[:target_ms]
+        # Convertir a array numpy float32
+        samples = np.array(audio.get_array_of_samples()).astype("float32")
 
-    # Convertir a array numpy float32
-    samples = np.array(audio.get_array_of_samples()).astype("float32")
-    samples = samples / np.iinfo(audio.array_type).max  # normalización
+        # Normalización
+        max_val = np.max(np.abs(samples)) + 1e-8
+        samples = samples / max_val
 
-    # Convertir a tensor
-    audio_tensor = torch.tensor(samples).unsqueeze(0).unsqueeze(0).to(DEVICE)
+        # 🔥 DETECCIÓN DE SILENCIO (UMBRAL REAL)
+        rms = np.sqrt(np.mean(samples**2))
 
-    # 🔥 Aquí debes llamar a tu modelo real (por ahora generamos uno aleatorio)
-    embedding = np.random.rand(128).astype("float32")
+        if rms < 0.01:  
+            print("[AUDIO ERROR] detectado silencio / volumen muy bajo")
+            return None
 
-    return embedding
+        # Asegurar duración fija de 3 segundos
+        target_len = 16000 * 3
+        if len(samples) < target_len:
+            pad = np.zeros(target_len - len(samples))
+            samples = np.concatenate([samples, pad])
+        else:
+            samples = samples[:target_len]
 
+        # Convertir a tensor
+        audio_tensor = torch.tensor(samples).unsqueeze(0).unsqueeze(0).to(DEVICE)
+
+        # Obtener embedding REAL del modelo
+        with torch.no_grad():
+            emb = VOICE_MODEL.embedding(audio_tensor).cpu().numpy().flatten()
+
+        return emb
+
+    except Exception as e:
+        print("[get_voice_embedding_from_file] Error:", e)
+        return None
 
 # -------------------------------------------------------------
 # DISTANCIAS
@@ -117,15 +187,22 @@ def get_voice_embedding_from_file(django_file):
 def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
     a = a.astype("float32")
     b = b.astype("float32")
-    dot = np.dot(a, b)
-    norm_a = np.linalg.norm(a) + 1e-8
-    norm_b = np.linalg.norm(b) + 1e-8
+    dot = float(np.dot(a, b))
+    norm_a = float(np.linalg.norm(a)) + 1e-8
+    norm_b = float(np.linalg.norm(b)) + 1e-8
     return 1.0 - (dot / (norm_a * norm_b))
 
 
 def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:
+    a = a.astype("float32")
+    b = b.astype("float32")
     return float(np.linalg.norm(a - b))
 
 
 def combine_distances(face_dist: float, voice_dist: float, alpha: float = 0.5) -> float:
-    return alpha * face_dist + (1 - alpha) * voice_dist
+    """
+    Combina distancias de rostro y voz.
+    alpha = peso del rostro (por defecto 0.5 → 50% rostro, 50% voz).
+    """
+    return alpha * face_dist + (1.0 - alpha) * voice_dist
+

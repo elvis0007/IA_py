@@ -25,6 +25,12 @@ User = get_user_model()
 def login_page(request):
     return render(request, "app_biometric_login/login.html")
 
+from django.contrib.auth import logout
+from django.shortcuts import redirect
+
+def logout_user(request):
+    logout(request)
+    return redirect("login")
 
 def login_email(request):
     if request.method == "POST":
@@ -133,7 +139,6 @@ def register_biometric(request):
 # ============================================================
 #             API: LOGIN / VERIFICACIÓN BIOMÉTRICA
 # ============================================================
-
 @csrf_exempt
 def verify_biometric(request):
     if request.method != "POST":
@@ -145,9 +150,16 @@ def verify_biometric(request):
     if not face_image or not voice_audio:
         return JsonResponse({"status": "fail", "message": "Faltan datos"}, status=400)
 
-    # Embeddings del intento
+    # Procesar rostro
     face_emb_try = get_face_embedding_from_base64(face_image)
+
+    # Procesar voz
     voice_emb_try = get_voice_embedding_from_file(voice_audio)
+    if voice_emb_try is None:
+        return JsonResponse({
+            "status": "fail",
+            "message": "No se detectó voz. Habla claramente."
+        })
 
     profiles = BiometricProfile.objects.select_related("user").all()
 
@@ -156,9 +168,9 @@ def verify_biometric(request):
 
     best_user = None
     best_score = 999
-    THRESHOLD = 0.65
+    THRESHOLD = 0.65  # ajustable según precisión real
 
-    # Buscar coincidencia
+    # Comparación contra todos los usuarios
     for profile in profiles:
         face_saved = np.array(profile.face_embedding, dtype="float32")
         voice_saved = np.array(profile.voice_embedding, dtype="float32")
@@ -172,6 +184,7 @@ def verify_biometric(request):
             best_score = score
             best_user = profile.user
 
+    # Validación final
     if best_user and best_score < THRESHOLD:
         login(request, best_user)
         return JsonResponse({
